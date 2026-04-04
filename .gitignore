@@ -1,0 +1,64 @@
+# -----------------------------
+# Environment / Secrets
+# -----------------------------
+.env
+.env.*
+!.env.example
+
+Backend/.env
+Backend/.env.*
+!Backend/.env.example
+
+Frontend/.env
+Frontend/.env.*
+!Frontend/.env.example
+
+# -----------------------------
+# Dependencies
+# -----------------------------
+node_modules/
+Backend/node_modules/
+Frontend/node_modules/
+
+# -----------------------------
+# Build / Generated output
+# -----------------------------
+dist/
+build/
+coverage/
+
+Backend/dist/
+Backend/build/
+Backend/coverage/
+
+Frontend/dist/
+Frontend/dist-ssr/
+Frontend/build/
+Frontend/coverage/
+
+# -----------------------------
+# Logs
+# -----------------------------
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# -----------------------------
+# OS / Editor
+# -----------------------------
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# -----------------------------
+# Runtime
+# -----------------------------
+*.pid
+*.pid.lock
+*.seed
