@@ -61,11 +61,19 @@ Create `Frontend/.env`:
 VITE_API_BASE_URL=https://jobai-0z3h.onrender.com
 ```
 
+For local development with Vite proxy, you can use:
+
+```env
+VITE_API_BASE_URL=/
+VITE_API_PROXY_TARGET=https://jobai-0z3h.onrender.com
+```
+
 Notes:
 
 - Frontend runs on `http://localhost:5173`
 - Backend CORS reads `CLIENT_URL` (supports comma-separated origins for local + deployed frontend)
 - In production, auth cookie uses `sameSite=none` and `secure=true`
+- For Vercel production, set `VITE_API_BASE_URL` to your Render backend URL (do not set it to `/`)
 
 ## Installation
 

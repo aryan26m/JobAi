@@ -1,6 +1,10 @@
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://jobai-0z3h.onrender.com";
+const DEFAULT_BACKEND_URL = "https://jobai-0z3h.onrender.com";
+const configuredBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim();
+const API_BASE_URL = import.meta.env.PROD && (!configuredBaseUrl || configuredBaseUrl === "/")
+    ? DEFAULT_BACKEND_URL
+    : (configuredBaseUrl || DEFAULT_BACKEND_URL);
 
 const api=axios.create({
     baseURL: API_BASE_URL,
