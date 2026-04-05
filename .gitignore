@@ -35,6 +35,7 @@ Frontend/dist/
 Frontend/dist-ssr/
 Frontend/build/
 Frontend/coverage/
+Backend/.cache/
 
 # -----------------------------
 # Logs

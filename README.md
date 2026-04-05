@@ -53,6 +53,7 @@ MONGO_URI=your_mongodb_connection_string
 JWT_SECRET=your_jwt_secret
 GOOGLE_GENAI_API_KEY=your_google_genai_api_key
 CLIENT_URL=http://localhost:5173
+PUPPETEER_CACHE_DIR=.cache/puppeteer
 ```
 
 Create `Frontend/.env`:
@@ -74,6 +75,8 @@ Notes:
 - Backend CORS reads `CLIENT_URL` (supports comma-separated origins for local + deployed frontend)
 - In production, auth cookie uses `sameSite=none` and `secure=true`
 - For Vercel production, set `VITE_API_BASE_URL` to your Render backend URL (do not set it to `/`)
+- Backend build runs a `postinstall` script to install Chrome for Puppeteer into `PUPPETEER_CACHE_DIR`
+- On Render, use backend start command `npm start`
 
 ## Installation
 
@@ -132,7 +135,7 @@ Interview routes:
 
 - Authentication uses cookie-based token flow.
 - Resume upload size limit is 3 MB.
-- Current backend controller requires resume file to generate report.
+- Interview report generation requires job description and at least one of resume or self-description.
 - Do not commit `.env` files or secrets.
 
 ## Build Frontend

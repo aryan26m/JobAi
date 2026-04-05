@@ -2,6 +2,9 @@ const { GoogleGenAI } = require("@google/genai");
 const {z} = require("zod");
 const {zodToJsonSchema} = require("zod-to-json-schema");
 const puppeteer = require("puppeteer");
+const fs = require("fs");
+const path = require("path");
+const { spawnSync } = require("child_process");
 const ai = new GoogleGenAI({
     apiKey: process.env.GOOGLE_GENAI_API_KEY
 })
@@ -10,6 +13,8 @@ const nonEmptyText = z.string().trim().min(10);
 const MIN_TEXT_LENGTH = 10;
 const DEFAULT_PREPARATION_TASKS = ["Revise core concepts", "Solve focused practice problems", "Do one mock interview"];
 const MIN_RESUME_HTML_LENGTH = 80;
+const DEFAULT_PUPPETEER_CACHE_DIR = path.join(process.cwd(), ".cache", "puppeteer");
+let chromeAutoInstallAttempted = false;
 
 const TECHNICAL_FALLBACK_QUESTIONS = [
     {
@@ -810,7 +815,78 @@ function parseResumeHtmlFromResponse(rawText) {
     return "";
 }
 
-async function generatePdfFromHtml(htmlContent) {
+function resolvePuppeteerCacheDir() {
+    const configured = process.env.PUPPETEER_CACHE_DIR;
+    const cacheDir = configured
+        ? (path.isAbsolute(configured) ? configured : path.join(process.cwd(), configured))
+        : DEFAULT_PUPPETEER_CACHE_DIR;
+
+    process.env.PUPPETEER_CACHE_DIR = cacheDir;
+    return cacheDir;
+}
+
+function isBrowserMissingError(error) {
+    const message = String(error?.message || "").toLowerCase();
+    return message.includes("could not find chrome")
+        || message.includes("could not find chromium")
+        || message.includes("browser was not found");
+}
+
+function installChromeForPuppeteer(cacheDir) {
+    if (chromeAutoInstallAttempted) {
+        return;
+    }
+
+    chromeAutoInstallAttempted = true;
+
+    if (process.env.PUPPETEER_SKIP_DOWNLOAD === "true" || process.env.PUPPETEER_SKIP_DOWNLOAD === "1") {
+        throw new Error("Chrome is missing and auto-download is disabled (PUPPETEER_SKIP_DOWNLOAD=true)");
+    }
+
+    fs.mkdirSync(cacheDir, { recursive: true });
+
+    const installEnv = { ...process.env, PUPPETEER_CACHE_DIR: cacheDir };
+    const npxInstallCommand = `npx puppeteer browsers install chrome --path \"${cacheDir}\"`;
+    const npmInstallCommand = `npm exec -- puppeteer browsers install chrome --path \"${cacheDir}\"`;
+
+    let installResult = spawnSync(
+        npxInstallCommand,
+        {
+            cwd: process.cwd(),
+            env: installEnv,
+            shell: true,
+            stdio: "pipe",
+            encoding: "utf8"
+        }
+    );
+
+    if (installResult.error) {
+        installResult = spawnSync(
+            npmInstallCommand,
+            {
+                cwd: process.cwd(),
+                env: installEnv,
+                shell: true,
+                stdio: "pipe",
+                encoding: "utf8"
+            }
+        );
+    }
+
+    if (installResult.error) {
+        throw new Error(`Failed to execute Puppeteer browser install command: ${installResult.error.message}`);
+    }
+
+    if (installResult.status !== 0) {
+        const stderr = String(installResult.stderr || "").trim();
+        const stdout = String(installResult.stdout || "").trim();
+        const details = stderr || stdout || `exit code ${installResult.status}`;
+        throw new Error(`Failed to install Chrome for Puppeteer: ${details}`);
+    }
+}
+
+async function launchPuppeteerBrowser() {
+    const cacheDir = resolvePuppeteerCacheDir();
     const launchOptions = {
         headless: "new",
         args: ["--no-sandbox", "--disable-setuid-sandbox"],
@@ -819,14 +895,42 @@ async function generatePdfFromHtml(htmlContent) {
 
     if (process.env.PUPPETEER_EXECUTABLE_PATH) {
         launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+    } else {
+        try {
+            launchOptions.executablePath = puppeteer.executablePath();
+        } catch (error) {
+            // executablePath can throw if browser is not installed yet.
+        }
     }
 
-    let browser;
     try {
-        browser = await puppeteer.launch(launchOptions);
+        return await puppeteer.launch(launchOptions);
     } catch (error) {
-        browser = await puppeteer.launch();
+        if (!isBrowserMissingError(error)) {
+            throw error;
+        }
+
+        installChromeForPuppeteer(cacheDir);
+
+        const retryOptions = {
+            ...launchOptions
+        };
+
+        if (!process.env.PUPPETEER_EXECUTABLE_PATH) {
+            try {
+                retryOptions.executablePath = puppeteer.executablePath();
+            } catch (retryError) {
+                // Keep retry options as-is if executable path still cannot be resolved.
+            }
+        }
+
+        return await puppeteer.launch(retryOptions);
     }
+}
+
+async function generatePdfFromHtml(htmlContent) {
+    let browser;
+    browser = await launchPuppeteerBrowser();
 
     try {
         const page = await browser.newPage();
