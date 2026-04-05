@@ -52,12 +52,20 @@ PORT=3000
 MONGO_URI=your_mongodb_connection_string
 JWT_SECRET=your_jwt_secret
 GOOGLE_GENAI_API_KEY=your_google_genai_api_key
+CLIENT_URL=http://localhost:5173
+```
+
+Create `Frontend/.env`:
+
+```env
+VITE_API_BASE_URL=https://jobai-0z3h.onrender.com
 ```
 
 Notes:
 
 - Frontend runs on `http://localhost:5173`
-- Backend CORS is currently configured for `http://localhost:5173`
+- Backend CORS reads `CLIENT_URL` (supports comma-separated origins for local + deployed frontend)
+- In production, auth cookie uses `sameSite=none` and `secure=true`
 
 ## Installation
 

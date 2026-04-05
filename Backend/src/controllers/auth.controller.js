@@ -2,6 +2,20 @@ const userModel=require("../models/user.model");
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const tokenBlackListModel=require("../models/tokenBlackList.model");
+
+const isProduction = process.env.NODE_ENV === "production";
+const cookieOptions = {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: isProduction ? "none" : "lax",
+    maxAge: 3 * 24 * 60 * 60 * 1000
+};
+
+const clearCookieOptions = {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: isProduction ? "none" : "lax"
+};
 /**
  * @desc Register a new user
  * @route POST /api/auth/register
@@ -30,7 +44,7 @@ async function registerUser(req,res) {
         username: newUser.username
        },process.env.JWT_SECRET,{expiresIn:"3d"});
 
-       res.cookie("token",token);
+             res.cookie("token",token,cookieOptions);
          res.status(201).json({
             message:"User registered successfully",
             user:{
@@ -66,7 +80,7 @@ async function loginUser(req,res){
         username: user.username
        },process.env.JWT_SECRET,{expiresIn:"3d"});
 
-       res.cookie("token",token);
+       res.cookie("token",token,cookieOptions);
             res.status(200).json({      
             message:"User logged in successfully",
             user:{
@@ -89,7 +103,7 @@ async function logoutUser(req,res){
         return res.status(400).json({message:"No token found"});
     }
     const tokenBlackList = await tokenBlackListModel.create({token});
-    res.clearCookie("token");
+    res.clearCookie("token",clearCookieOptions);
     res.status(200).json({message:"User logged out successfully"});
 }
 
