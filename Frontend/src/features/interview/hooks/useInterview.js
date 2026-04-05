@@ -63,7 +63,12 @@ export const useInterview = ()=>{
         setLoading(true);
         try{
             const pdfBlob = await generateResumePdf(interviewId);
-            const url = window.URL.createObjectURL(new Blob([pdfBlob], { type: "application/pdf" }));
+            const downloadBlob = pdfBlob instanceof Blob ? pdfBlob : new Blob([pdfBlob], { type: "application/pdf" });
+            if (downloadBlob.size === 0) {
+                throw new Error("Received empty PDF file");
+            }
+
+            const url = window.URL.createObjectURL(downloadBlob);
             const link = document.createElement("a");
             link.href = url;
             link.setAttribute("download", `resume_${interviewId}.pdf`);
@@ -74,7 +79,7 @@ export const useInterview = ()=>{
 
              }
         catch(error){
-            console.error("Error generating resume PDF:",error);
+            console.error("Error generating resume PDF:",error?.message || error);
             return null;
         }
         finally{

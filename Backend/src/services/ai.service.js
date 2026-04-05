@@ -8,6 +8,8 @@ const ai = new GoogleGenAI({
 
 const nonEmptyText = z.string().trim().min(10);
 const MIN_TEXT_LENGTH = 10;
+const DEFAULT_PREPARATION_TASKS = ["Revise core concepts", "Solve focused practice problems", "Do one mock interview"];
+const MIN_RESUME_HTML_LENGTH = 80;
 
 const TECHNICAL_FALLBACK_QUESTIONS = [
     {
@@ -103,15 +105,165 @@ const interviewReportSchema = z.object({
     title: z.string().describe("The title of the job for which the interview report is generated"),
 })
 
+const resumePdfSchema = z.object({
+    html: z.string().trim().min(MIN_RESUME_HTML_LENGTH).describe("Well-formed HTML used for resume PDF rendering")
+});
+
 function getFallbackQuestion(kind, index) {
     const bank = kind === "behavioral" ? BEHAVIORAL_FALLBACK_QUESTIONS : TECHNICAL_FALLBACK_QUESTIONS;
     return bank[index % bank.length];
+}
+
+function parseJsonValueFromString(value) {
+    if (typeof value !== "string") {
+        return null;
+    }
+
+    const rawText = value.trim();
+    if (!rawText) {
+        return null;
+    }
+
+    const candidates = [rawText];
+    const objectCandidate = extractJsonCandidate(rawText);
+    if (objectCandidate && objectCandidate !== rawText) {
+        candidates.push(objectCandidate);
+    }
+
+    const firstBracket = rawText.indexOf("[");
+    const lastBracket = rawText.lastIndexOf("]");
+    if (firstBracket !== -1 && lastBracket !== -1 && lastBracket > firstBracket) {
+        candidates.push(rawText.slice(firstBracket, lastBracket + 1));
+    }
+
+    for (const candidate of candidates) {
+        try {
+            return JSON.parse(candidate);
+        } catch (error) {
+            // Ignore parse error and continue trying other candidates.
+        }
+    }
+
+    return null;
+}
+
+function toArrayValue(value) {
+    if (Array.isArray(value)) {
+        return value;
+    }
+
+    if (typeof value === "string") {
+        const parsed = parseJsonValueFromString(value);
+        if (Array.isArray(parsed)) {
+            return parsed;
+        }
+    }
+
+    return [];
+}
+
+function extractQuestionFieldsFromText(value) {
+    if (typeof value !== "string") {
+        return null;
+    }
+
+    const lines = value
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+
+    if (lines.length === 0) {
+        return null;
+    }
+
+    let question = "";
+    let intention = "";
+    let answer = "";
+
+    for (const line of lines) {
+        if (!question && /^question\s*[:\-]\s*/i.test(line)) {
+            question = line.replace(/^question\s*[:\-]\s*/i, "").trim();
+            continue;
+        }
+
+        if (!intention && /^(intention|intent|purpose)\s*[:\-]\s*/i.test(line)) {
+            intention = line.replace(/^(intention|intent|purpose)\s*[:\-]\s*/i, "").trim();
+            continue;
+        }
+
+        if (!answer && /^(answer|model\s*answer|sample\s*answer)\s*[:\-]\s*/i.test(line)) {
+            answer = line.replace(/^(answer|model\s*answer|sample\s*answer)\s*[:\-]\s*/i, "").trim();
+        }
+    }
+
+    if (!question) {
+        question = lines[0] || "";
+    }
+
+    if (!question && !intention && !answer) {
+        return null;
+    }
+
+    return { question, intention, answer };
+}
+
+function extractPreparationPlanFromText(value, fallbackDay) {
+    if (typeof value !== "string") {
+        return null;
+    }
+
+    const lines = value
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+
+    if (lines.length === 0) {
+        return null;
+    }
+
+    const dayMatch = value.match(/\bday\s*[:#\-]?\s*(\d{1,2})\b/i);
+    const focusLine = lines.find((line) => /^focus\s*[:\-]\s*/i.test(line));
+    const focusCandidate = focusLine
+        ? focusLine.replace(/^focus\s*[:\-]\s*/i, "").trim()
+        : lines.find((line) => !/^day\b/i.test(line) && !/^tasks?\b/i.test(line) && !/^[-*\u2022]/.test(line) && !/^\d+[.)]/.test(line));
+
+    const taskLines = lines
+        .filter((line) => /^[-*\u2022]/.test(line) || /^\d+[.)]/.test(line))
+        .map((line) => line.replace(/^([-*\u2022]|\d+[.)])\s*/, "").trim())
+        .filter(Boolean);
+
+    const labeledTasks = lines
+        .filter((line) => /^tasks?\s*[:\-]\s*/i.test(line))
+        .flatMap((line) => line.replace(/^tasks?\s*[:\-]\s*/i, "").split(/[;,|]/).map((task) => task.trim()))
+        .filter(Boolean);
+
+    const tasks = taskLines.length > 0 ? taskLines : labeledTasks;
+
+    return {
+        day: dayMatch ? Number(dayMatch[1]) : fallbackDay,
+        focus: focusCandidate || "Interview preparation",
+        tasks
+    };
 }
 
 function normalizeQuestionItem(item = {}, kind = "technical", index = 0) {
     const fallbackQuestion = getFallbackQuestion(kind, index);
 
     if (typeof item === "string") {
+        const parsed = parseJsonValueFromString(item);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            return normalizeQuestionItem(parsed, kind, index);
+        }
+
+        const extracted = extractQuestionFieldsFromText(item);
+        if (extracted) {
+            return {
+                question: normalizeText(extracted.question, fallbackQuestion.question),
+                intention: normalizeText(extracted.intention, fallbackQuestion.intention),
+                answer: normalizeText(extracted.answer, fallbackQuestion.answer)
+            };
+        }
+
         const base = normalizeText(item, fallbackQuestion.question);
         return {
             question: base,
@@ -141,6 +293,11 @@ function normalizeText(value, fallback) {
 
 function normalizeSkillGapItem(item) {
     if (typeof item === "string") {
+        const parsed = parseJsonValueFromString(item);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            return normalizeSkillGapItem(parsed);
+        }
+
         return {
             skill: normalizeText(item, "System design"),
             severity: "medium"
@@ -155,10 +312,17 @@ function normalizeSkillGapItem(item) {
 
 function normalizePreparationPlanItem(item, index) {
     if (typeof item === "string") {
+        const parsed = parseJsonValueFromString(item);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            return normalizePreparationPlanItem(parsed, index);
+        }
+
+        const extracted = extractPreparationPlanFromText(item, index + 1);
+
         return {
-            day: index + 1,
-            focus: normalizeText(item, "Interview preparation"),
-            tasks: ["Revise core concepts", "Solve focused practice problems", "Do one mock interview"]
+            day: extracted?.day ?? index + 1,
+            focus: normalizeText(extracted?.focus, "Interview preparation"),
+            tasks: Array.isArray(extracted?.tasks) && extracted.tasks.length > 0 ? extracted.tasks : DEFAULT_PREPARATION_TASKS
         };
     }
 
@@ -169,7 +333,7 @@ function normalizePreparationPlanItem(item, index) {
     return {
         day: typeof item?.day === "number" && Number.isFinite(item.day) ? item.day : index + 1,
         focus: normalizeText(item?.focus, "Interview preparation"),
-        tasks: tasks.length > 0 ? tasks : ["Revise core concepts", "Solve focused practice problems", "Do one mock interview"]
+        tasks: tasks.length > 0 ? tasks : DEFAULT_PREPARATION_TASKS
     };
 }
 
@@ -281,20 +445,21 @@ function normalizeReport(report = {}) {
     const skillGaps = report.skillGaps ?? report.skill_gaps;
     const preparationPlan = report.preparationPlan ?? report.preparation_plan;
 
-    const normalizedTechnical = Array.isArray(technicalQuestions)
-        ? technicalQuestions.map((item, index) => normalizeQuestionItem(item, "technical", index))
-        : [];
+    const technicalQuestionList = toArrayValue(technicalQuestions);
+    const behavioralQuestionList = toArrayValue(behavioralQuestions);
+    const skillGapList = toArrayValue(skillGaps);
+    const preparationPlanList = toArrayValue(preparationPlan);
 
-    const normalizedBehavioral = Array.isArray(behavioralQuestions)
-        ? behavioralQuestions.map((item, index) => normalizeQuestionItem(item, "behavioral", index))
-        : [];
+    const normalizedTechnical = technicalQuestionList.map((item, index) => normalizeQuestionItem(item, "technical", index));
+
+    const normalizedBehavioral = behavioralQuestionList.map((item, index) => normalizeQuestionItem(item, "behavioral", index));
 
     const uniqueTechnical = dedupeQuestions(normalizedTechnical, "technical");
     const uniqueBehavioral = dedupeQuestions(normalizedBehavioral, "behavioral");
     const finalTechnical = ensureMinimumQuestions(uniqueTechnical, "technical", 6);
     const finalBehavioral = ensureMinimumQuestions(uniqueBehavioral, "behavioral", 4);
-    const finalSkillGaps = ensureMinimumSkillGaps(skillGaps, 3);
-    const finalPreparationPlan = ensureMinimumPreparationPlan(preparationPlan, 5);
+    const finalSkillGaps = ensureMinimumSkillGaps(skillGapList, 3);
+    const finalPreparationPlan = ensureMinimumPreparationPlan(preparationPlanList, 5);
 
     return {
         ...report,
@@ -457,15 +622,22 @@ function buildFallbackInterviewReport({ selfDescription, jobDescription }) {
 }
 
 async function generateInterviewReport({resume, selfDescription, jobDescription }) {
+    const resumeText = typeof resume === "string" ? resume.trim() : "";
+    const selfDescriptionText = typeof selfDescription === "string" ? selfDescription.trim() : "";
+    const jobDescriptionText = typeof jobDescription === "string" ? jobDescription.trim() : "";
 
-    if (!resume || !selfDescription || !jobDescription) {
-        throw new Error("resume, selfDescription and jobDescription are required");
+    if (!jobDescriptionText) {
+        throw new Error("jobDescription is required");
+    }
+
+    if (!resumeText && !selfDescriptionText) {
+        throw new Error("Either resume or selfDescription is required");
     }
 
     const prompt = `Generate an interview report for a candidate with the following details:
-Resume: ${resume}
-Self Description: ${selfDescription}
-Job Description: ${jobDescription}
+Resume: ${resumeText || "Not provided"}
+Self Description: ${selfDescriptionText || "Not provided"}
+Job Description: ${jobDescriptionText}
 
 Rules:
 1. Return only valid JSON.
@@ -524,7 +696,7 @@ JSON shape example:
                 lastError = error;
 
                 if (isQuotaExceededError(error)) {
-                    const fallbackReport = buildFallbackInterviewReport({ selfDescription, jobDescription });
+                    const fallbackReport = buildFallbackInterviewReport({ selfDescription: selfDescriptionText, jobDescription: jobDescriptionText });
                     const normalizedFallback = normalizeReport(fallbackReport);
                     return interviewReportSchema.parse(normalizedFallback);
                 }
@@ -546,46 +718,216 @@ JSON shape example:
     throw new Error(`Gemini API request failed. Last error: ${lastError?.message || "Unknown error"}`);
 }
 
+function escapeHtml(value = "") {
+    return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+}
+
+function truncateText(value, maxLength = 1600) {
+    const text = typeof value === "string" ? value.trim() : "";
+    if (!text) {
+        return "";
+    }
+
+    if (text.length <= maxLength) {
+        return text;
+    }
+
+    return `${text.slice(0, maxLength)}...`;
+}
+
+function buildBulletList(text, maxItems = 8) {
+    return String(text || "")
+        .split(/\r?\n/)
+        .map((line) => line.replace(/^[-*\u2022\d.)\s]+/, "").trim())
+        .filter((line) => line.length >= 12)
+        .slice(0, maxItems);
+}
+
+function buildFallbackResumeHtml({ resume, selfDescription, jobDescription }) {
+    const summarySource = truncateText(selfDescription, 900) || "Motivated software engineer with practical problem-solving and delivery experience.";
+    const roleSource = truncateText(jobDescription, 450) || "Software Engineer";
+    const experienceBullets = buildBulletList(resume, 8);
+
+    const bulletItems = experienceBullets.length > 0
+        ? experienceBullets.map((item) => `<li>${escapeHtml(item)}</li>`).join("")
+        : `<li>Built and maintained production-ready web application features with clean, testable code.</li>
+           <li>Collaborated with cross-functional teams to deliver improvements and fix customer-facing issues.</li>
+           <li>Improved reliability through better logging, validation, and performance-focused code changes.</li>`;
+
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Resume</title>
+  <style>
+    body { font-family: Arial, Helvetica, sans-serif; margin: 0; color: #111827; }
+    .page { padding: 28px 34px; }
+    h1 { margin: 0 0 6px; font-size: 26px; }
+    h2 { margin: 20px 0 8px; font-size: 14px; letter-spacing: 0.8px; text-transform: uppercase; color: #0f766e; }
+    p { margin: 0 0 10px; line-height: 1.5; font-size: 13px; }
+    ul { margin: 0; padding-left: 18px; }
+    li { margin: 0 0 8px; line-height: 1.4; font-size: 13px; }
+    .subtle { color: #374151; }
+    .card { background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <h1>Professional Resume</h1>
+    <p class="subtle">Auto-generated fallback resume profile for PDF download.</p>
+
+    <h2>Professional Summary</h2>
+    <p>${escapeHtml(summarySource)}</p>
+
+    <h2>Target Role Context</h2>
+    <div class="card">
+      <p>${escapeHtml(roleSource)}</p>
+    </div>
+
+    <h2>Key Experience Highlights</h2>
+    <ul>${bulletItems}</ul>
+  </main>
+</body>
+</html>`;
+}
+
+function parseResumeHtmlFromResponse(rawText) {
+    if (typeof rawText !== "string" || !rawText.trim()) {
+        return "";
+    }
+
+    const parsed = parseJsonValueFromString(rawText);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return typeof parsed.html === "string" ? parsed.html.trim() : "";
+    }
+
+    return "";
+}
+
 async function generatePdfFromHtml(htmlContent) {
-    const browser = await puppeteer.launch();
-    const page = await browser.newPage();
-    await page.setContent(htmlContent, { waitUntil: "networkidle0" });
-    const pdfBuffer = await page.pdf({ format: "A4" , margin: { top: "20mm", bottom: "20mm", left: "15mm", right: "15mm" }});
-    await browser.close();
-    return pdfBuffer;
+    const launchOptions = {
+        headless: "new",
+        args: ["--no-sandbox", "--disable-setuid-sandbox"],
+        timeout: 60000
+    };
+
+    if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+        launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+    }
+
+    let browser;
+    try {
+        browser = await puppeteer.launch(launchOptions);
+    } catch (error) {
+        browser = await puppeteer.launch();
+    }
+
+    try {
+        const page = await browser.newPage();
+        await page.setContent(htmlContent, { waitUntil: "networkidle0", timeout: 60000 });
+        await page.emulateMediaType("screen");
+        const pdfBuffer = await page.pdf({
+            format: "A4",
+            printBackground: true,
+            margin: { top: "20mm", bottom: "20mm", left: "15mm", right: "15mm" }
+        });
+        return Buffer.from(pdfBuffer);
+    } finally {
+        await browser.close();
+    }
 }
 
 async function generateResumePdf({resume, selfDescription, jobDescription}){
-const resumePdfSchema=z.object({
-    html:z.string().describe("The html content of the resume PDF generated based on the resume text, self-description and job description which can be rendered in the frontend and converted to PDF using puppeteer")
-})
-const prompt = `Generate a resume PDF in HTML format for a candidate with the following details:
-Resume: ${resume}
-Self Description: ${selfDescription}
-Job Description: ${jobDescription}
-Rules:the response must be a JSON object with a single key "html" containing the HTML content of the resume PDF which can be rendered in the frontend and converted to PDF using puppeteer. Do not return any text outside of the JSON object. Do not include markdown or code fences. Ensure the HTML is well-formed and can be rendered without errors.
-the resume should be tailored to the given job description and self-description, highlighting relevant skills and experience. The design should be clean and professional, suitable for a software engineering role.
-The content of the resume should not sound like it was generated by an AI, but rather like a genuine resume created by a candidate. Avoid using generic phrases and ensure the resume has a natural flow.
-You can highlight the content that matches the job description and self-description, but do not exaggerate or fabricate information. The resume should be an honest representation of the candidate's profile, optimized for the given job description.
-The content of the resume should be concise and impactful, focusing on key achievements and skills that are relevant to the job description. Use bullet points for clarity and keep the overall length to a maximum of 2 pages when rendered as PDF.
-ATS score should be considered in the resume generation, ensuring that the resume is optimized for applicant tracking systems while still being visually appealing and easy to read for human recruiters.
-Highlight the most relevant skills and experiences based on the job description and self-description, but do not include irrelevant information. The resume should be tailored to the specific job description provided, showcasing the candidate's strengths in relation to the requirements of the role.
+    const resumeText = typeof resume === "string" ? resume.trim() : "";
+    const selfDescriptionText = typeof selfDescription === "string" ? selfDescription.trim() : "";
+    const jobDescriptionText = typeof jobDescription === "string" ? jobDescription.trim() : "";
+
+    if (!jobDescriptionText) {
+        throw new Error("Job description is required to generate resume PDF");
+    }
+
+    const prompt = `Generate a resume PDF in HTML format for a candidate with the following details:
+Resume: ${resumeText || "Not provided"}
+Self Description: ${selfDescriptionText || "Not provided"}
+Job Description: ${jobDescriptionText}
+Rules:
+1. Return only valid JSON.
+2. Response JSON must contain exactly one key: html.
+3. html must be complete, valid, and printable resume-style HTML for A4 PDF.
+4. Do not return markdown or code fences.
+5. Keep content realistic and aligned with provided information only.
 `;
 
-    const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: prompt,
-        config: {
-            responseMimeType: "application/json",
-            responseSchema: zodToJsonSchema(resumePdfSchema),
+    const models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-3-flash-preview"];
+    let lastError;
+
+    for (const modelName of models) {
+        for (let attempt = 1; attempt <= 2; attempt++) {
+            try {
+                const response = await ai.models.generateContent({
+                    model: modelName,
+                    contents: prompt,
+                    config: {
+                        responseMimeType: "application/json",
+                        responseSchema: zodToJsonSchema(resumePdfSchema),
+                    }
+                });
+
+                const rawText = typeof response.text === "function" ? response.text() : response.text;
+                const html = parseResumeHtmlFromResponse(rawText);
+                const parsed = resumePdfSchema.safeParse({ html });
+
+                if (!parsed.success) {
+                    throw new Error("AI returned malformed resume HTML response");
+                }
+
+                return await generatePdfFromHtml(parsed.data.html);
+            } catch (error) {
+                lastError = error;
+                const errorMessage = String(error?.message || "").toLowerCase();
+
+                if (isRetryableApiError(error)) {
+                    const backoffMs = 700 * Math.pow(2, attempt - 1);
+                    await sleep(backoffMs);
+                    continue;
+                }
+
+                if (isModelNotFoundError(error)) {
+                    break;
+                }
+
+                if (isQuotaExceededError(error)) {
+                    break;
+                }
+
+                if (errorMessage.includes("malformed resume html response")) {
+                    break;
+                }
+
+                break;
+            }
         }
+    }
+
+    const fallbackHtml = buildFallbackResumeHtml({
+        resume: resumeText,
+        selfDescription: selfDescriptionText,
+        jobDescription: jobDescriptionText
     });
 
-    const jsonContent=JSON.parse(response.text);
-    const pdfBuffer=await generatePdfFromHtml(jsonContent.html);
-    return pdfBuffer;
+    try {
+        return await generatePdfFromHtml(fallbackHtml);
+    } catch (pdfError) {
+        throw new Error(`Failed to generate resume PDF. Last AI error: ${lastError?.message || "Unknown error"}; PDF renderer error: ${pdfError?.message || "Unknown error"}`);
+    }
 }
 
 
 
-module.exports={generateInterviewReport, generateResumePdf}; 
+module.exports={generateInterviewReport, generateResumePdf, normalizeReport};

@@ -59,10 +59,41 @@ export const fetchAllInterviews=async()=>{
  * @returns {Promise<Blob>} - A promise that resolves to a Blob containing the PDF data.
  */
 export const generateResumePdf=async(interviewId)=>{
-    const response=await api.post(`/api/interview/resume/pdf/${interviewId}`,null,{
-        responseType:"blob"
-    });
-     
-    return response.data;
+    if (!interviewId) {
+        throw new Error("Interview id is required to download resume PDF");
+    }
+
+    try {
+        const response=await api.post(`/api/interview/resume/pdf/${interviewId}`,null,{
+            responseType:"blob"
+        });
+
+        const contentType = String(response?.headers?.["content-type"] || "").toLowerCase();
+        if (contentType.includes("application/json")) {
+            const errorText = await response.data.text();
+            let message = "Failed to generate resume PDF";
+            try {
+                const parsed = JSON.parse(errorText);
+                message = parsed?.message || message;
+            } catch (parseError) {
+                // keep fallback message when JSON parsing fails
+            }
+            throw new Error(message);
+        }
+
+        return response.data;
+    } catch (error) {
+        if (error?.response?.data instanceof Blob) {
+            const errorText = await error.response.data.text();
+            try {
+                const parsed = JSON.parse(errorText);
+                throw new Error(parsed?.message || "Failed to generate resume PDF");
+            } catch (parseError) {
+                throw new Error("Failed to generate resume PDF");
+            }
+        }
+
+        throw error;
+    }
 
 }
