@@ -105,7 +105,7 @@ const Interview = () => {
     }
 
     const handleCreateNewReport = () => {
-        navigate('/')
+        navigate('/dashboard')
     }
 
     const scoreColor = !hasMatchScore ? 'score--mid' : report.matchScore >= 80 ? 'score--high' : report.matchScore >= 60 ? 'score--mid' : 'score--low'

@@ -9,16 +9,12 @@ $border-color: #2a3348;
 $text-primary: #e6edf3;
 $text-muted: #7d8590;
 $accent: #ff2d78;
-$font-stack: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+$font-stack: var(--font-ui), system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 
 // severity palette
 $severity-high: #ff4d4d;
 $severity-medium: #f5a623;
 $severity-low: #3fb950;
-
-*::-webkit-scrollbar {
-    display: none;
-}
 
 // ── Page Shell ────────────────────────────────────────────────────────────────
 .interview-page {
@@ -31,6 +27,15 @@ $severity-low: #3fb950;
     align-items: stretch;
     padding: 1.5rem;
     box-sizing: border-box;
+}
+
+.interview-page *::-webkit-scrollbar {
+    width: 8px;
+}
+
+.interview-page *::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.14);
+    border-radius: 999px;
 }
 
 // ── 3-Column Layout ───────────────────────────────────────────────────────────
@@ -210,6 +215,10 @@ $severity-low: #3fb950;
         align-items: flex-start;
         gap: 0.75rem;
         padding: 0.9rem 1rem;
+        width: 100%;
+        border: none;
+        background-color: transparent;
+        color: inherit;
         cursor: pointer;
         user-select: none;
     }
@@ -292,9 +301,6 @@ $severity-low: #3fb950;
     }
 }
 
-.q-card__header{
-    background-color: #454242;
-}
 // ── Road Map ──────────────────────────────────────────────────────────────────
 .roadmap-list {
     display: flex;
@@ -508,5 +514,26 @@ $severity-low: #3fb950;
         color: $severity-low;
         background-color: rgba($severity-low, 0.1);
         border-color: rgba($severity-low, 0.25);
+    }
+}
+
+@media (max-width: 1100px) {
+    .interview-layout {
+        flex-direction: column;
+    }
+
+    .interview-divider {
+        width: 100%;
+        height: 1px;
+    }
+
+    .interview-nav,
+    .interview-sidebar {
+        width: 100%;
+    }
+
+    .interview-content {
+        max-height: unset;
+        padding: 1.25rem;
     }
 }

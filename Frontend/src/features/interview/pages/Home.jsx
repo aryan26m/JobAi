@@ -7,18 +7,25 @@ const Home = () => {
     const {loading,generateReport,reports} = useInterview();
     const [jobDescription, setJobDescription] = useState("");
     const [selfDescription, setSelfDescription] = useState("");
+        const [isGenerating, setIsGenerating] = useState(false);
     const resumeRef = useRef();
     const navigate = useNavigate();
     const handleGenerateReport = async()=>{
-      const resumeFile= resumeRef.current.files[0];
-      const data =   await generateReport({selfDescription,resume:resumeFile,jobDescription});
+            if (isGenerating) {
+                return;
+            }
+            setIsGenerating(true);
+            try {
+            const resumeFile= resumeRef.current.files[0];
+            const data =   await generateReport({selfDescription,resume:resumeFile,jobDescription});
             if (data) {
                 const reportId = data?._id ?? data?.id;
                 navigate(reportId ? `/interview/${reportId}` : '/interview');
             }
-    }
-    if(loading){
-        return (<main><h1>Generating your interview strategy...</h1></main>)
+            }
+            finally {
+                setIsGenerating(false);
+            }
     }
 
     return (
@@ -110,9 +117,10 @@ const Home = () => {
                     <span className='footer-info'>AI-Powered Strategy Generation &bull; Approx 30s</span>
                     <button
                         onClick={handleGenerateReport}
+                        disabled={isGenerating}
                         className='generate-btn'>
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z" /></svg>
-                        Generate My Interview Strategy
+                        {isGenerating ? 'Generating Strategy...' : 'Generate My Interview Strategy'}
                     </button>
                 </div>
             </div>
@@ -134,6 +142,7 @@ const Home = () => {
             )}
 
             {/* Page Footer */}
+            {loading && <p className='home-status'>Loading your latest reports...</p>}
             <footer className='page-footer'>
                 <a href='#'>Privacy Policy</a>
                 <a href='#'>Terms of Service</a>

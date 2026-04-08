@@ -1,14 +1,10 @@
 import axios from 'axios';
-
-const DEFAULT_BACKEND_URL = "https://jobai-0z3h.onrender.com";
-const configuredBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim();
-const API_BASE_URL = import.meta.env.PROD && (!configuredBaseUrl || configuredBaseUrl === "/")
-    ? DEFAULT_BACKEND_URL
-    : (configuredBaseUrl || DEFAULT_BACKEND_URL);
+import { API_BASE_URL } from '../../../lib/apiBaseUrl';
 
 const api=axios.create({
     baseURL: API_BASE_URL,
-    withCredentials:true
+    withCredentials:true,
+    timeout: 15000
 });
 
 export async function register({username,email,password}){

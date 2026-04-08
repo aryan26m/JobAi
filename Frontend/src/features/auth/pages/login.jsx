@@ -12,19 +12,19 @@ const Login = () => {
 
     const handleSubmit = async (e) => {
         e.preventDefault()
-        await handleLogin({email,password})
-        navigate('/')
+        try {
+            await handleLogin({email,password})
+            navigate('/dashboard')
+        } catch (error) {
+            // Keep user on login page when authentication fails.
+        }
     }
-
-    if(loading){
-        return (<main><h1>Loading.......</h1></main>)
-    }
-
 
     return (
-        <main>
+        <main className='auth-page'>
             <div className="form-container">
                 <h1>Login</h1>
+                <p className='form-subtitle'>Continue your interview prep journey with your account.</p>
                 <form onSubmit={handleSubmit}>
                     <div className="input-group">
                         <label htmlFor="email">Email</label>
@@ -38,7 +38,9 @@ const Login = () => {
                             onChange={(e) => { setPassword(e.target.value) }}
                             type="password" id="password" name='password' placeholder='Enter password' />
                     </div>
-                    <button className='button primary-button' >Login</button>
+                    <button className='button primary-button' disabled={loading}>
+                        {loading ? 'Signing in...' : 'Login'}
+                    </button>
                 </form>
                 <p>Don't have an account? <Link to={"/register"} >Register</Link> </p>
             </div>

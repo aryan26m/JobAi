@@ -10,17 +10,18 @@ const Register = () => {
     const [password, setPassword] = useState("");
     const handleSubmit = async(e) => {
         e.preventDefault();
-        // Handle Register logic here
-        await handleRegister({username,email,password});
-        navigate("/");
+        try {
+            await handleRegister({username,email,password});
+            navigate("/dashboard");
+        } catch (error) {
+            // Keep user on register page when registration fails.
+        }
     }
-    if(loading){
-        return (<main><h1>Loading</h1></main>)
-    }  
     return(
-   <main>
+   <main className='auth-page'>
             <div className="form-container">
                 <h1>Register</h1>
+                <p className='form-subtitle'>Create your account to unlock personalized interview strategy.</p>
                 <form onSubmit={handleSubmit}>
                     <div className="input-group">
                         <label htmlFor="username">Username</label>
@@ -37,7 +38,9 @@ const Register = () => {
                         <input onChange={(e)=>{setPassword(e.target.value)}}
                         type="password" id="password" name='password' placeholder='Enter password' />
                     </div>
-                    <button className='button primary-button' >Register</button>
+                    <button className='button primary-button' disabled={loading}>
+                        {loading ? 'Creating account...' : 'Register'}
+                    </button>
                 </form>
                 <p>Already have an account ? <Link to={"/login"}>Login</Link></p>
             </div>
