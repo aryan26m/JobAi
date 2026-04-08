@@ -83,4 +83,21 @@
             box-shadow: 0 0 0 3px var(--accent-soft);
         }
     }
+
+    .input-error {
+        color: #ff7b9f;
+        font-size: 0.78rem;
+        margin-top: 0.1rem;
+        line-height: 1.3;
+    }
+}
+
+.auth-page .form-error {
+    background-color: rgba(255, 80, 118, 0.14);
+    border: 1px solid rgba(255, 80, 118, 0.45);
+    color: #ffb7c8;
+    border-radius: 0.65rem;
+    padding: 0.55rem 0.7rem;
+    font-size: 0.84rem;
+    line-height: 1.4;
 }
